@@ -1,0 +1,51 @@
+name: CI
+on:
+  push:
+    branches: [main, production-upgrade]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REDIS_TEST_ADDR: 127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go mod download && go mod verify
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./...
+      - run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - run: go build ./...
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      - run: govulncheck ./...
+      - run: git diff --check
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure ephemeral test credentials
+        run: |
+          echo "API_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "ADMIN_API_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - run: docker compose config --quiet
+      - run: docker compose up --build -d --wait --wait-timeout 120
+      - name: API smoke test
+        run: |
+          curl --fail http://127.0.0.1:8080/ready
+          curl --fail -H "X-API-Key: $API_KEY" -H 'Content-Type: application/json' -d '{"client_id":"ci","resource":"api","cost":1}' http://127.0.0.1:8080/check
+      - if: always()
+        run: docker compose logs && docker compose down -v

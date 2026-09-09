@@ -6,8 +6,8 @@ type QuotaConfig struct {
 	WindowSec int64 // window in seconds
 }
 
-// DefaultQuotas — fallback when no client-specific config is set.
-var DefaultQuotas = map[string]QuotaConfig{
+// defaultQuotas — fallback when no client-specific config is set.
+var defaultQuotas = map[string]QuotaConfig{
 	"default": {Limit: 100, WindowSec: 60},
 	"api":     {Limit: 1000, WindowSec: 60},
 	"search":  {Limit: 50, WindowSec: 60},
@@ -15,8 +15,8 @@ var DefaultQuotas = map[string]QuotaConfig{
 	"auth":    {Limit: 5, WindowSec: 60},
 }
 
-// ClientOverrides — per-client quota overrides.
-var ClientOverrides = map[string]map[string]QuotaConfig{
+// clientOverrides — per-client quota overrides.
+var clientOverrides = map[string]map[string]QuotaConfig{
 	"premium_client": {
 		"api":    {Limit: 10000, WindowSec: 60},
 		"search": {Limit: 500, WindowSec: 60},
@@ -28,13 +28,13 @@ var ClientOverrides = map[string]map[string]QuotaConfig{
 }
 
 func GetQuota(clientID, resource string) QuotaConfig {
-	if overrides, ok := ClientOverrides[clientID]; ok {
+	if overrides, ok := clientOverrides[clientID]; ok {
 		if q, ok := overrides[resource]; ok {
 			return q
 		}
 	}
-	if q, ok := DefaultQuotas[resource]; ok {
+	if q, ok := defaultQuotas[resource]; ok {
 		return q
 	}
-	return DefaultQuotas["default"]
+	return defaultQuotas["default"]
 }

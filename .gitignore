@@ -7,3 +7,8 @@
 *.out
 .env
 vendor/
+/server
+/bin/
+.env.*
+!.env.example
+coverage.*
