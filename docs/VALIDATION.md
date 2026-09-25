@@ -1,9 +1,10 @@
-# Validation — 2026-09-09
+# Validation
 
-Local branch: production-upgrade. Baseline: ad37b60.
-Status: source validation passed; Docker build/startup and remote CI pending.
-The branch was subsequently published at the user’s request for WSL validation.
-Main has not been merged. See GitHub Actions for remote CI status.
+Baseline: `ad37b60`. Production hardening and the follow-up gRPC security update are
+merged into `main`. Pull request #2 passed the full CI workflow before merge, including
+race-enabled tests, `govulncheck`, Docker Compose startup, readiness, and an authenticated
+HTTP smoke test. Verify the latest `main` GitHub Actions run for the current commit before
+making a release claim.
 
 ## Executed checks
 
@@ -12,7 +13,8 @@ Main has not been merged. See GitHub Actions for remote CI status.
   no test cases skipped. REDIS_TEST_ADDR pointed to a supervised local Redis.
 - `go vet ./...`, `go build ./...`, `go mod verify`, formatting, and
   `git diff --check`: passed.
-- govulncheck v1.8.0: no vulnerabilities found with final dependencies.
+- `govulncheck` is enforced in CI. The final merged dependency set includes gRPC
+  `v1.83.2`, which resolved GO-2026-6443 and GO-2026-6348 identified during hardening.
 - HTTP readiness and authenticated gRPC client: passed.
 - SIGTERM shutdown: process exited successfully with status 0.
 - `.env`, `.env.production`, and build output are ignored. No secret files staged.
@@ -43,8 +45,10 @@ Test events: reports/tests.jsonl. Audit output: reports/security-audit.txt.
 No before/after performance percentage is valid because the old benchmark was not
 correct. Do not reuse the removed 0.215 ms p99 or ~50k requests/sec README claims.
 
-## Remaining gates
+## Release guidance
 
-Docker is not installed in the preparation environment. The Dockerfile and Compose
-configuration are written and reviewed but neither built nor started here. The branch is now published for GitHub Actions and WSL validation. Follow docs/WSL_HANDOFF.md and provide the startup
-and test output before publishing or claiming the upgrade is complete.
+GitHub Actions validates the application on pull requests and on pushes to `main`.
+For machine-specific resume or interview performance claims, rerun the benchmark in
+WSL or another named environment and preserve the raw output together with CPU count,
+request count, concurrency, and workload mode. Do not reuse the removed baseline
+`0.215 ms p99` / `~50k requests/sec` claims.

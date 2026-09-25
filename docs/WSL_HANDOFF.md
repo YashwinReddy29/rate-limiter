@@ -1,15 +1,15 @@
-# Finish validation in WSL2
+# Validate the current main branch in WSL2
 
-The production-upgrade branch is published for local Docker validation. Source
-tests, dependency audits, and benchmarks are recorded in docs/VALIDATION.md.
-Verify GitHub Actions and your WSL checks before merging into main.
+Production hardening is merged into `main`. Use this guide to reproduce the Docker,
+test, security-scan, and benchmark checks locally. Historical validation evidence is
+recorded in `docs/VALIDATION.md`.
 
 Run in Ubuntu WSL (use a fresh directory):
 
 ```bash
 cd ~
-git clone -b production-upgrade https://github.com/YashwinReddy29/rate-limiter.git rate-limiter-upgrade
-cd rate-limiter-upgrade
+git clone https://github.com/YashwinReddy29/rate-limiter.git
+cd rate-limiter
 export API_KEY=$(openssl rand -hex 32)
 export ADMIN_API_KEY=$(openssl rand -hex 32)
 docker compose config --quiet
@@ -40,14 +40,13 @@ The benchmark commands above print your WSL results without overwriting the
 checked-in preparation-environment reports. Preserve new measurements with their
 machine/workload details if using them in resume claims.
 
-Only after the results pass and are reviewed:
+After the checks pass, keep any benchmark output you plan to cite together with the
+machine/runtime details. Compare your local commit with `origin/main` before using the
+results as evidence:
 
 ```bash
 git fetch origin
-git log --oneline --left-right origin/main...production-upgrade
-git push -u origin production-upgrade
+git status --short --branch
+git rev-parse HEAD
+git rev-parse origin/main
 ```
-
-Verify Actions on that exact commit and resolve any failures before merging.
-Do not merge main automatically. An upgrade PR in your own repository and a
-contribution PR to another maintainer's repository are separate activities.

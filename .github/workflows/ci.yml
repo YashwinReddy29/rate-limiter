@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, production-upgrade]
+    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -20,8 +20,8 @@ jobs:
     env:
       REDIS_TEST_ADDR: 127.0.0.1:6379
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -36,7 +36,7 @@ jobs:
   compose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure ephemeral test credentials
         run: |
           echo "API_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
