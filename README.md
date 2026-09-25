@@ -1,5 +1,7 @@
 # Distributed Rate Limiter as a Service
 
+![CI](https://github.com/YashwinReddy29/rate-limiter/actions/workflows/ci.yml/badge.svg?branch=main)
+
 A Go service that lets trusted backend applications share per-client, per-resource
 quotas through HTTP and gRPC. Redis executes each sliding-window admission decision
 atomically. The service is intended for private infrastructure behind a TLS ingress.
@@ -10,6 +12,23 @@ HTTP and gRPC adapters authenticate callers, bound requests, and invoke the same
 limiter policy. A single Redis Lua script prunes expired units, checks the remaining
 budget, and records admitted units. Redis TIME supplies the clock. Each accepted
 unit has a cryptographically random request prefix and a unit index.
+
+```mermaid
+flowchart LR
+    A[Trusted Backend Service] -->|HTTP /check| B[HTTP Adapter]
+    A -->|gRPC Check| C[gRPC Adapter]
+    B --> D[Auth + Validation]
+    C --> D
+    D --> E[RateLimiter Policy]
+    E --> F[Redis Store]
+    F --> G[Atomic Lua Script]
+    G --> H[(Redis Sorted Set)]
+    H --> G
+    G --> F
+    F --> E
+    E --> B
+    E --> C
+```
 
 This is an **exact sliding-window log**, not an approximate sliding-window counter.
 The default window is 60 seconds. Usage includes accepted cost units in
@@ -38,7 +57,6 @@ Compose v2 (or Docker Desktop with WSL integration), Git, and OpenSSL.
 ```bash
 git clone https://github.com/YashwinReddy29/rate-limiter.git
 cd rate-limiter
-git switch production-upgrade
 cp .env.example .env
 ```
 
@@ -200,6 +218,20 @@ The original baseline failed `go test ./...` due to a vet error in the demo clie
 it had no automated tests. Its claimed 0.215 ms p99 and ~50k requests/second are
 removed: the original percentile code indexed unsorted observations and did not
 validate outcomes. No before/after performance improvement is claimed.
+
+## Validated benchmark snapshot
+
+Checked-in smoke benchmarks use 10,000 requests with 50 closed-loop workers on the
+same host as the service and Redis. They are not sustained-capacity claims.
+
+| Workload | Allowed | Denied | Errors | Requests/s | Mean | p95 | p99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Shared 1000-unit quota | 1,000 | 9,000 | 0 | 11,590.55 | 3.91 ms | 12.03 ms | 23.51 ms |
+| Unique client per request | 10,000 | 0 | 0 | 10,546.90 | 4.37 ms | 13.19 ms | 19.13 ms |
+
+The original `~50k req/s` / `0.215 ms p99` figures are intentionally not used because
+the previous percentile methodology was invalid. See `docs/VALIDATION.md` for scope,
+limitations, raw report locations, and correctness evidence.
 
 ## Reproducible benchmark
 
