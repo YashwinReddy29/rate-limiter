@@ -1,26 +1,33 @@
-version: '3.8'
-
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
-
+    restart: unless-stopped
   rate-limiter:
     build: .
     ports:
-      - "50051:50051"
-      - "8080:8080"
+      - "127.0.0.1:50051:50051"
+      - "127.0.0.1:8080:8080"
     environment:
       REDIS_ADDR: redis:6379
-      GRPC_PORT: 50051
-      HTTP_PORT: 8080
+      BIND_ADDR: 0.0.0.0
+      API_KEY: ${API_KEY:?Set API_KEY in .env}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?Set ADMIN_API_KEY in .env}
     depends_on:
       redis:
         condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+volumes:
+  redis-data:

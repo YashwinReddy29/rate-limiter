@@ -2,111 +2,84 @@ package limiter
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"errors"
+	"regexp"
 
 	"github.com/YashwinReddy29/rate-limiter/internal/store"
 )
 
+var ErrInvalid = errors.New("client_id and resource must contain 1-128 letters, digits, dots, underscores or hyphens; cost must be 1-10000")
+var identifier = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+
+func Validate(clientID, resource string) error {
+	if !identifier.MatchString(clientID) || !identifier.MatchString(resource) {
+		return ErrInvalid
+	}
+	return nil
+}
+
+type Store interface {
+	Window(context.Context, string, string, int64, int64, int64) (store.Decision, error)
+	ResetKey(context.Context, string, string) error
+	Ping(context.Context) error
+}
 type Result struct {
-	Allowed      bool
-	Remaining    int64
-	Limit        int64
-	ResetAfterMs int64
-	Reason       string
+	Allowed      bool   `json:"allowed"`
+	Remaining    int64  `json:"remaining"`
+	Limit        int64  `json:"limit"`
+	ResetAfterMs int64  `json:"reset_after_ms"`
+	Reason       string `json:"reason"`
 }
+type RateLimiter struct{ store Store }
 
-type RateLimiter struct {
-	store *store.RedisStore
-}
-
-func New(s *store.RedisStore) *RateLimiter {
-	return &RateLimiter{store: s}
-}
-
+func New(s Store) *RateLimiter { return &RateLimiter{store: s} }
 func (rl *RateLimiter) Check(ctx context.Context, clientID, resource string, cost int32) (*Result, error) {
-	quota := GetQuota(clientID, resource)
-	if cost <= 0 {
-		cost = 1
+	if err := Validate(clientID, resource); err != nil {
+		return nil, err
 	}
-
-	count, err := rl.store.SlidingWindowIncr(ctx, clientID, resource, quota.WindowSec, int64(cost))
-	if err != nil {
-		return nil, fmt.Errorf("redis error: %w", err)
+	if cost < 1 || cost > 10000 {
+		return nil, ErrInvalid
 	}
-
-	remaining := quota.Limit - count
-	allowed := count <= quota.Limit
-	resetAfterMs := quota.WindowSec * 1000
-
-	reason := "ok"
-	if !allowed {
-		remaining = 0
-		reason = fmt.Sprintf("rate limit exceeded: %d/%d requests in %ds window",
-			count, quota.Limit, quota.WindowSec)
+	q := GetQuota(clientID, resource)
+	// An impossible request is rejected without accessing or allocating Redis state.
+	if int64(cost) > q.Limit {
+		return &Result{Limit: q.Limit, Reason: "cost exceeds quota limit"}, nil
 	}
-
-	return &Result{
-		Allowed:      allowed,
-		Remaining:    max(remaining, 0),
-		Limit:        quota.Limit,
-		ResetAfterMs: resetAfterMs,
-		Reason:       reason,
-	}, nil
-}
-
-func (rl *RateLimiter) Reset(ctx context.Context, clientID, resource string) error {
-	return rl.store.ResetKey(ctx, clientID, resource)
-}
-
-func (rl *RateLimiter) GetQuota(ctx context.Context, clientID, resource string) (*QuotaInfo, error) {
-	quota := GetQuota(clientID, resource)
-	used, err := rl.store.SlidingWindowCount(ctx, clientID, resource, quota.WindowSec)
+	d, err := rl.store.Window(ctx, clientID, resource, q.WindowSec, q.Limit, int64(cost))
 	if err != nil {
 		return nil, err
 	}
-	return &QuotaInfo{
-		ClientID:  clientID,
-		Resource:  resource,
-		Limit:     quota.Limit,
-		Used:      used,
-		Remaining: max(quota.Limit-used, 0),
-		WindowSec: quota.WindowSec,
-	}, nil
+	reason := "ok"
+	if !d.Allowed {
+		reason = "rate limit exceeded"
+	}
+	return &Result{Allowed: d.Allowed, Remaining: max(q.Limit-d.Used, 0), Limit: q.Limit, ResetAfterMs: d.ResetAfterMs, Reason: reason}, nil
 }
+func (rl *RateLimiter) Reset(ctx context.Context, clientID, resource string) error {
+	if err := Validate(clientID, resource); err != nil {
+		return err
+	}
+	return rl.store.ResetKey(ctx, clientID, resource)
+}
+func (rl *RateLimiter) Ready(ctx context.Context) error { return rl.store.Ping(ctx) }
 
 type QuotaInfo struct {
-	ClientID  string
-	Resource  string
-	Limit     int64
-	Used      int64
-	Remaining int64
-	WindowSec int64
+	ClientID  string `json:"client_id"`
+	Resource  string `json:"resource"`
+	Limit     int64  `json:"limit"`
+	Used      int64  `json:"used"`
+	Remaining int64  `json:"remaining"`
+	WindowSec int64  `json:"window_sec"`
 }
 
-func max(a, b int64) int64 {
-	if a > b {
-		return a
+func (rl *RateLimiter) GetQuota(ctx context.Context, clientID, resource string) (*QuotaInfo, error) {
+	if err := Validate(clientID, resource); err != nil {
+		return nil, err
 	}
-	return b
-}
-
-// BenchmarkLatency measures p99 scoring latency
-func (rl *RateLimiter) BenchmarkLatency(ctx context.Context, n int) map[string]float64 {
-	latencies := make([]float64, n)
-	for i := 0; i < n; i++ {
-		start := time.Now()
-		rl.Check(ctx, "bench_client", "api", 1)
-		latencies[i] = float64(time.Since(start).Microseconds()) / 1000.0
+	q := GetQuota(clientID, resource)
+	d, err := rl.store.Window(ctx, clientID, resource, q.WindowSec, q.Limit, 0)
+	if err != nil {
+		return nil, err
 	}
-	// p50, p99
-	sum := 0.0
-	for _, v := range latencies {
-		sum += v
-	}
-	avg := sum / float64(n)
-
-	// Simple p99 (sort-free approximation)
-	p99 := latencies[int(float64(n)*0.99)]
-	return map[string]float64{"avg_ms": avg, "p99_ms": p99, "n": float64(n)}
+	return &QuotaInfo{ClientID: clientID, Resource: resource, Limit: q.Limit, Used: d.Used, Remaining: max(q.Limit-d.Used, 0), WindowSec: q.WindowSec}, nil
 }
