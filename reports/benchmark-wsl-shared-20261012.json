@@ -1,0 +1,18 @@
+{
+  "allowed": 1000,
+  "concurrency": 50,
+  "cpu_count": 4,
+  "denied": 9000,
+  "duration_seconds": 1.005288408,
+  "errors": 0,
+  "go_version": "go1.27.2",
+  "latency_scope": "HTTP round trip including body decode; all outcomes; no warmup",
+  "mean_ms": 4.850987824899967,
+  "mode": "shared",
+  "p50_ms": 4.202954,
+  "p95_ms": 10.399559,
+  "p99_ms": 14.9886,
+  "requests": 10000,
+  "requests_per_second": 9947.394121349502,
+  "timestamp": "2026-10-12T22:11:41.002276918Z"
+}
